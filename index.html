@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Place Map</title>
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIINfQ3ynPqD3mLktoQ6A2e2kZZh2K9gH8U="
+    crossorigin=""
+  />
+  <style>
+    html, body { height: 100%; margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+    #map { height: 100%; min-height: 360px; background: #f3f3f1; }
+    .map-status {
+      position: absolute; z-index: 1000; top: 12px; left: 50%; transform: translateX(-50%);
+      max-width: min(560px, calc(100vw - 32px)); padding: 8px 12px;
+      background: rgba(255,255,255,.94); border: 1px solid rgba(0,0,0,.12);
+      border-radius: 9px; box-shadow: 0 2px 12px rgba(0,0,0,.08);
+      font-size: 13px; line-height: 1.4;
+    }
+    .map-status.ok { display: none; }
+    .place-label {
+      background: rgba(255,255,255,.94);
+      border: 1px solid rgba(0,0,0,.14);
+      border-radius: 5px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.12);
+      color: #222;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 3px 6px;
+      white-space: nowrap;
+    }
+    .place-label::before { display: none; }
+    .legend {
+      background: rgba(255,255,255,.94); padding: 8px 10px; border-radius: 7px;
+      border: 1px solid rgba(0,0,0,.12); font-size: 12px; line-height: 1.6;
+    }
+    .legend-row { display:flex; align-items:center; gap:7px; }
+    .dot { width:10px; height:10px; border-radius:50%; display:inline-block; }
+    .popup-links { display:flex; gap:10px; margin-top:8px; flex-wrap:wrap; }
+    .popup-links a { color:#1557b0; text-decoration:none; }
+    .popup-links a:hover { text-decoration:underline; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="status" class="map-status">地図データを読み込み中…</div>
+
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+  <script>
+    "use strict";
+
+    // Public spreadsheet only. Do not put private IDs, itinerary dates/times,
+    // booking data, costs, personal notes, or Notion URLs in the sheet.
+    const SPREADSHEET_ID = "1ATwMkh0aJoz4ppB5J0_djBVdjYI-nScH6m5GzZsATXI";
+    const REQUIRED_HEADERS = [
+      "name", "latitude", "longitude", "category", "official_url", "google_maps_url"
+    ];
+    const FORBIDDEN_DOMAINS = [
+      "notion.so", "app.notion.com", "drive.google.com", "docs.google.com"
+    ];
+
+    const sheetParam = new URLSearchParams(location.search).get("sheet") || "kumamoto";
+    if (!/^[a-z0-9-]{1,40}$/.test(sheetParam)) {
+      throw new Error("Invalid map identifier.");
+    }
+
+    const map = L.map("map", { zoomControl: true, preferCanvas: true });
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    }).addTo(map);
+
+    const statusEl = document.getElementById("status");
+
+    function setStatus(message, ok=false) {
+      statusEl.textContent = message;
+      statusEl.className = "map-status" + (ok ? " ok" : "");
+    }
+
+    function colorFor(category) {
+      const c = String(category || "");
+      if (/食事|カフェ|coffee|food/i.test(c)) return "#d9a514";
+      if (/自然|海|公園|nature/i.test(c)) return "#4b8a5a";
+      if (/交通|駅|港|空港|transport/i.test(c)) return "#50718c";
+      if (/建築|宿|hotel|architecture/i.test(c)) return "#c96b35";
+      return "#666";
+    }
+
+    function safeHttpsUrl(value, kind) {
+      if (!value) return "";
+      let u;
+      try { u = new URL(value); } catch { throw new Error(`Invalid ${kind} URL.`); }
+      if (u.protocol !== "https:") throw new Error(`${kind} URL must use HTTPS.`);
+      const host = u.hostname.toLowerCase();
+      if (FORBIDDEN_DOMAINS.some(d => host === d || host.endsWith("." + d))) {
+        throw new Error(`${kind} URL contains a private-source domain.`);
+      }
+      if (kind === "Google Maps" && !/(^|\.)google\.[a-z.]+$/.test(host)) {
+        throw new Error("Google Maps URL must use a Google domain.");
+      }
+      return u.href;
+    }
+
+    function containsSensitivePattern(text) {
+      const s = String(text || "");
+      const email = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i;
+      const forbiddenWords = /(予約|booking|費用|cost|price|day\s*\d|日時|時刻|人数|phone|email|token|secret|notion)/i;
+      return email.test(s) || forbiddenWords.test(s);
+    }
+
+    function validateHeaders(cols) {
+      const headers = cols.map(c => String(c.label || c.id || "").trim());
+      if (headers.length !== REQUIRED_HEADERS.length) return false;
+      return REQUIRED_HEADERS.every((h, i) => headers[i] === h);
+    }
+
+    function cellValue(row, index) {
+      const c = row && row.c ? row.c[index] : null;
+      return c && c.v !== null && c.v !== undefined ? c.v : "";
+    }
+
+    window.__travelMapData = function(payload) {
+      try {
+        if (!payload || payload.status === "error" || !payload.table) {
+          throw new Error("Public sheet data could not be read.");
+        }
+        if (!validateHeaders(payload.table.cols || [])) {
+          throw new Error("Security gate blocked the sheet: header schema does not match the six approved public fields.");
+        }
+
+        const bounds = [];
+        let count = 0;
+
+        for (const row of (payload.table.rows || [])) {
+          const name = String(cellValue(row, 0)).trim();
+          const lat = Number(cellValue(row, 1));
+          const lng = Number(cellValue(row, 2));
+          const category = String(cellValue(row, 3)).trim();
+          const officialUrlRaw = String(cellValue(row, 4)).trim();
+          const mapsUrlRaw = String(cellValue(row, 5)).trim();
+
+          if (!name && !category && !officialUrlRaw && !mapsUrlRaw) continue;
+          if (!name || !Number.isFinite(lat) || !Number.isFinite(lng) || !category) {
+            throw new Error("Security gate blocked an incomplete or invalid spot row.");
+          }
+          if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+            throw new Error("Security gate blocked invalid coordinates.");
+          }
+          if ([name, category, officialUrlRaw, mapsUrlRaw].some(containsSensitivePattern)) {
+            throw new Error("Security gate blocked a row that may contain itinerary or personal information.");
+          }
+
+          const officialUrl = safeHttpsUrl(officialUrlRaw, "Official");
+          const mapsUrl = safeHttpsUrl(mapsUrlRaw, "Google Maps");
+          const color = colorFor(category);
+
+          const marker = L.circleMarker([lat, lng], {
+            radius: 7, color: "#fff", weight: 2, fillColor: color, fillOpacity: 1
+          }).addTo(map);
+
+          marker.bindTooltip(name, {
+            permanent: true, direction: "right", offset: [8, 0], className: "place-label"
+          });
+
+          const links = [];
+          if (officialUrl) links.push(`<a href="${officialUrl}" target="_blank" rel="noopener noreferrer">公式</a>`);
+          if (mapsUrl) links.push(`<a href="${mapsUrl}" target="_blank" rel="noopener noreferrer">Google Maps</a>`);
+          marker.bindPopup(
+            `<strong>${escapeHtml(name)}</strong><br>${escapeHtml(category)}` +
+            (links.length ? `<div class="popup-links">${links.join("")}</div>` : "")
+          );
+
+          bounds.push([lat, lng]);
+          count++;
+        }
+
+        if (!count) throw new Error("No valid public spots were found.");
+        map.fitBounds(bounds, { padding: [48, 48], maxZoom: 15 });
+        addLegend();
+        setStatus("", true);
+      } catch (err) {
+        console.error(err);
+        map.setView([32.803, 130.707], 12);
+        setStatus("地図データを表示できません。公開データの安全チェックで停止しました。");
+      }
+    };
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, ch => ({
+        "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"
+      }[ch]));
+    }
+
+    function addLegend() {
+      const legend = L.control({ position: "bottomright" });
+      legend.onAdd = function() {
+        const div = L.DomUtil.create("div", "legend");
+        div.innerHTML = `
+          <div class="legend-row"><span class="dot" style="background:#c96b35"></span>建築・宿</div>
+          <div class="legend-row"><span class="dot" style="background:#d9a514"></span>食事・カフェ</div>
+          <div class="legend-row"><span class="dot" style="background:#4b8a5a"></span>自然</div>
+          <div class="legend-row"><span class="dot" style="background:#50718c"></span>交通</div>`;
+        return div;
+      };
+      legend.addTo(map);
+    }
+
+    // Google Visualization Query response handler avoids CORS fetch problems.
+    const script = document.createElement("script");
+    const endpoint = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq`;
+    script.src = endpoint +
+      `?sheet=${encodeURIComponent(sheetParam)}` +
+      `&tqx=${encodeURIComponent("responseHandler:__travelMapData")}` +
+      `&tq=${encodeURIComponent("select *")}`;
+    script.onerror = () => setStatus("公開シートを読み込めません。共有設定を確認してください。");
+    document.head.appendChild(script);
+  </script>
+</body>
+</html>
