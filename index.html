@@ -12,33 +12,34 @@
   />
   <style>
     html, body { height: 100%; margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
-    #map { height: 100%; min-height: 360px; background: #f3f3f1; }
+    #map { height: 100%; min-height: 360px; background: #f4f4f2; }
     .map-status {
       position: absolute; z-index: 1000; top: 12px; left: 50%; transform: translateX(-50%);
-      max-width: min(560px, calc(100vw - 32px)); padding: 8px 12px;
-      background: rgba(255,255,255,.94); border: 1px solid rgba(0,0,0,.12);
+      max-width: min(600px, calc(100vw - 32px)); padding: 9px 13px;
+      background: rgba(255,255,255,.96); border: 1px solid rgba(0,0,0,.12);
       border-radius: 9px; box-shadow: 0 2px 12px rgba(0,0,0,.08);
-      font-size: 13px; line-height: 1.4;
+      color: #292929; font-size: 13px; line-height: 1.45;
     }
     .map-status.ok { display: none; }
     .place-label {
-      background: rgba(255,255,255,.94);
-      border: 1px solid rgba(0,0,0,.14);
+      background: rgba(255,255,255,.97);
+      border: 1px solid rgba(0,0,0,.16);
       border-radius: 5px;
-      box-shadow: 0 1px 4px rgba(0,0,0,.12);
-      color: #222;
-      font-size: 12px;
-      font-weight: 600;
-      padding: 3px 6px;
+      box-shadow: 0 1px 5px rgba(0,0,0,.14);
+      color: #202020;
+      font-size: 13px;
+      font-weight: 700;
+      padding: 4px 7px;
       white-space: nowrap;
     }
     .place-label::before { display: none; }
     .legend {
-      background: rgba(255,255,255,.94); padding: 8px 10px; border-radius: 7px;
-      border: 1px solid rgba(0,0,0,.12); font-size: 12px; line-height: 1.6;
+      background: rgba(255,255,255,.96); padding: 9px 11px; border-radius: 7px;
+      border: 1px solid rgba(0,0,0,.13); box-shadow: 0 1px 5px rgba(0,0,0,.08);
+      color: #292929; font-size: 12px; line-height: 1.7;
     }
     .legend-row { display:flex; align-items:center; gap:7px; }
-    .dot { width:10px; height:10px; border-radius:50%; display:inline-block; }
+    .dot { width:10px; height:10px; border-radius:50%; display:inline-block; box-shadow: 0 0 0 1px rgba(0,0,0,.08); }
     .popup-links { display:flex; gap:10px; margin-top:8px; flex-wrap:wrap; }
     .popup-links a { color:#1557b0; text-decoration:none; }
     .popup-links a:hover { text-decoration:underline; }
@@ -56,8 +57,9 @@
   <script>
     "use strict";
 
-    // Public spreadsheet only. Do not put private IDs, itinerary dates/times,
-    // booking data, costs, personal notes, or Notion URLs in the sheet.
+    // travel-maps public engine v0.2.0
+    // Public-only spreadsheet. Never add itinerary dates/times, sequence,
+    // bookings, costs, personal notes, Notion URLs/IDs, tokens, or secrets.
     const SPREADSHEET_ID = "1ATwMkh0aJoz4ppB5J0_djBVdjYI-nScH6m5GzZsATXI";
     const REQUIRED_HEADERS = [
       "name", "latitude", "longitude", "category", "official_url", "google_maps_url"
@@ -72,9 +74,10 @@
     }
 
     const map = L.map("map", { zoomControl: true, preferCanvas: true });
-    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 19,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+      subdomains: "abcd",
+      maxZoom: 20,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
     }).addTo(map);
 
     const statusEl = document.getElementById("status");
@@ -86,11 +89,11 @@
 
     function colorFor(category) {
       const c = String(category || "");
-      if (/食事|カフェ|coffee|food/i.test(c)) return "#d9a514";
-      if (/自然|海|公園|nature/i.test(c)) return "#4b8a5a";
-      if (/交通|駅|港|空港|transport/i.test(c)) return "#50718c";
-      if (/建築|宿|hotel|architecture/i.test(c)) return "#c96b35";
-      return "#666";
+      if (/食事|カフェ|coffee|food/i.test(c)) return "#c49518";
+      if (/自然|海|公園|nature/i.test(c)) return "#477f55";
+      if (/交通|駅|港|空港|transport/i.test(c)) return "#4b6f8a";
+      if (/建築|宿|hotel|architecture/i.test(c)) return "#bd6031";
+      return "#5f5f5f";
     }
 
     function safeHttpsUrl(value, kind) {
@@ -115,30 +118,61 @@
       return email.test(s) || forbiddenWords.test(s);
     }
 
-    function validateHeaders(cols) {
-      const headers = cols.map(c => String(c.label || c.id || "").trim());
-      if (headers.length !== REQUIRED_HEADERS.length) return false;
-      return REQUIRED_HEADERS.every((h, i) => headers[i] === h);
-    }
-
     function cellValue(row, index) {
       const c = row && row.c ? row.c[index] : null;
       return c && c.v !== null && c.v !== undefined ? c.v : "";
     }
 
+    function validateHeaders(table) {
+      const cols = Array.isArray(table.cols) ? table.cols : [];
+      if (cols.length !== REQUIRED_HEADERS.length) return false;
+      const actual = cols.map(col => String(col.label || "").trim());
+      return REQUIRED_HEADERS.every((h, i) => actual[i] === h);
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, ch => ({
+        "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"
+      }[ch]));
+    }
+
+    function addLegend() {
+      const legend = L.control({ position: "bottomright" });
+      legend.onAdd = function() {
+        const div = L.DomUtil.create("div", "legend");
+        div.innerHTML = `
+          <div class="legend-row"><span class="dot" style="background:#bd6031"></span>建築・宿</div>
+          <div class="legend-row"><span class="dot" style="background:#c49518"></span>食事・カフェ</div>
+          <div class="legend-row"><span class="dot" style="background:#477f55"></span>自然</div>
+          <div class="legend-row"><span class="dot" style="background:#4b6f8a"></span>交通</div>`;
+        return div;
+      };
+      legend.addTo(map);
+    }
+
+    let dataHandled = false;
+    const loadTimeout = window.setTimeout(() => {
+      if (dataHandled) return;
+      map.setView([32.803, 130.707], 12);
+      setStatus("公開シートを匿名で読み込めません。公開専用Sheetの共有設定を確認してください。");
+    }, 10000);
+
     window.__travelMapData = function(payload) {
+      dataHandled = true;
+      window.clearTimeout(loadTimeout);
       try {
         if (!payload || payload.status === "error" || !payload.table) {
           throw new Error("Public sheet data could not be read.");
         }
-        if (!validateHeaders(payload.table.cols || [])) {
-          throw new Error("Security gate blocked the sheet: header schema does not match the six approved public fields.");
+        if (!validateHeaders(payload.table)) {
+          throw new Error("Security gate blocked the sheet: schema does not exactly match the six approved public fields.");
         }
 
         const bounds = [];
         let count = 0;
+        const dataRows = payload.table.rows || [];
 
-        for (const row of (payload.table.rows || [])) {
+        for (const row of dataRows) {
           const name = String(cellValue(row, 0)).trim();
           const lat = Number(cellValue(row, 1));
           const lng = Number(cellValue(row, 2));
@@ -146,7 +180,7 @@
           const officialUrlRaw = String(cellValue(row, 4)).trim();
           const mapsUrlRaw = String(cellValue(row, 5)).trim();
 
-          if (!name && !category && !officialUrlRaw && !mapsUrlRaw) continue;
+          if (!name && !category && !officialUrlRaw && !mapsUrlRaw && !Number.isFinite(lat) && !Number.isFinite(lng)) continue;
           if (!name || !Number.isFinite(lat) || !Number.isFinite(lng) || !category) {
             throw new Error("Security gate blocked an incomplete or invalid spot row.");
           }
@@ -162,11 +196,11 @@
           const color = colorFor(category);
 
           const marker = L.circleMarker([lat, lng], {
-            radius: 7, color: "#fff", weight: 2, fillColor: color, fillOpacity: 1
+            radius: 8, color: "#fff", weight: 2.5, fillColor: color, fillOpacity: 1
           }).addTo(map);
 
-          marker.bindTooltip(name, {
-            permanent: true, direction: "right", offset: [8, 0], className: "place-label"
+          marker.bindTooltip(escapeHtml(name), {
+            permanent: true, direction: "right", offset: [9, 0], className: "place-label"
           });
 
           const links = [];
@@ -182,7 +216,7 @@
         }
 
         if (!count) throw new Error("No valid public spots were found.");
-        map.fitBounds(bounds, { padding: [48, 48], maxZoom: 15 });
+        map.fitBounds(bounds, { padding: [58, 58], maxZoom: 15 });
         addLegend();
         setStatus("", true);
       } catch (err) {
@@ -192,34 +226,23 @@
       }
     };
 
-    function escapeHtml(value) {
-      return String(value).replace(/[&<>"']/g, ch => ({
-        "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"
-      }[ch]));
-    }
-
-    function addLegend() {
-      const legend = L.control({ position: "bottomright" });
-      legend.onAdd = function() {
-        const div = L.DomUtil.create("div", "legend");
-        div.innerHTML = `
-          <div class="legend-row"><span class="dot" style="background:#c96b35"></span>建築・宿</div>
-          <div class="legend-row"><span class="dot" style="background:#d9a514"></span>食事・カフェ</div>
-          <div class="legend-row"><span class="dot" style="background:#4b8a5a"></span>自然</div>
-          <div class="legend-row"><span class="dot" style="background:#50718c"></span>交通</div>`;
-        return div;
-      };
-      legend.addTo(map);
-    }
-
-    // Google Visualization Query response handler avoids CORS fetch problems.
+    // Explicitly declare one header row so Google Visualization returns the
+    // six approved spreadsheet headers as column labels instead of inferring
+    // the header count differently across published-sheet responses.
     const script = document.createElement("script");
     const endpoint = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq`;
+    const tqx = "out:json;responseHandler:__travelMapData";
     script.src = endpoint +
       `?sheet=${encodeURIComponent(sheetParam)}` +
-      `&tqx=${encodeURIComponent("responseHandler:__travelMapData")}` +
+      `&headers=1` +
+      `&tqx=${encodeURIComponent(tqx)}` +
       `&tq=${encodeURIComponent("select *")}`;
-    script.onerror = () => setStatus("公開シートを読み込めません。共有設定を確認してください。");
+    script.onerror = () => {
+      dataHandled = true;
+      window.clearTimeout(loadTimeout);
+      map.setView([32.803, 130.707], 12);
+      setStatus("公開シートを匿名で読み込めません。公開専用Sheetの共有設定を確認してください。");
+    };
     document.head.appendChild(script);
   </script>
 </body>
