@@ -46,8 +46,98 @@
     .leaflet-popup { position:absolute; text-align:center; margin-bottom:20px; }
     .leaflet-tooltip { position:absolute; padding:6px; background:#fff; border:1px solid #fff; border-radius:3px; color:#222; white-space:nowrap; user-select:none; pointer-events:none; }
     .leaflet-control-attribution { background:rgba(255,255,255,.8); margin:0; padding:0 5px; font-size:11px; }
-    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
-    #map { width: 100%; height: 100%; min-height: 0; background: #f4f4f2; }
+    html, body { width: 100%; height: 100%; margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: #fff; }
+    body { display: flex; flex-direction: column; overflow: hidden; }
+    #map { width: 100%; flex: 1 1 auto; min-height: 190px; background: #f4f4f2; }
+    #map-info {
+      flex: 0 0 auto;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: start;
+      padding: 10px 12px;
+      border-top: 1px solid rgba(0,0,0,.10);
+      background: rgba(255,255,255,.98);
+      box-sizing: border-box;
+    }
+    .info-card { min-width: 0; }
+    .info-title {
+      margin: 0 0 6px;
+      font-size: 11px;
+      font-weight: 750;
+      letter-spacing: .08em;
+      color: #666;
+    }
+    #spot-index-list {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 2px;
+      max-width: 420px;
+    }
+    #spot-index-list.dense {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      column-gap: 12px;
+      row-gap: 2px;
+      max-width: 760px;
+    }
+    .external-spot-row {
+      display: grid;
+      grid-template-columns: 28px minmax(0, 1fr);
+      gap: 6px;
+      align-items: center;
+      min-height: 26px;
+      text-decoration: none;
+      color: #1876a3;
+      border-radius: 5px;
+      padding: 1px 2px;
+    }
+    .external-spot-row:hover { background: rgba(0,0,0,.045); }
+    .external-spot-row .place-marker-alpha {
+      box-shadow: none;
+    }
+    .external-spot-name {
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      font-size: 12px;
+    }
+    #legend-list {
+      display: grid;
+      gap: 4px;
+      white-space: nowrap;
+      font-size: 12px;
+      color: #292929;
+    }
+    .external-legend-row {
+      display: grid;
+      grid-template-columns: 12px auto;
+      gap: 6px;
+      align-items: center;
+    }
+    .external-legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+    @media (max-width: 600px) {
+      #map { min-height: 250px; }
+      #map-info {
+        grid-template-columns: 1fr;
+        gap: 8px;
+        padding: 9px 10px 10px;
+        max-height: 42%;
+        overflow-y: auto;
+      }
+      #spot-index-list,
+      #spot-index-list.dense {
+        grid-template-columns: 1fr;
+        max-width: none;
+      }
+      #legend-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 4px 10px;
+      }
+    }
     .map-status {
       position: absolute; z-index: 1000; top: 12px; left: 50%; transform: translateX(-50%);
       max-width: min(600px, calc(100vw - 32px)); padding: 9px 13px;
@@ -93,81 +183,23 @@
       letter-spacing: .01em;
     }
 
-    .spot-index-control {
-      background: rgba(255,255,255,.96);
-      border: 1px solid rgba(0,0,0,.13);
-      border-radius: 8px;
-      box-shadow: 0 1px 6px rgba(0,0,0,.10);
-      color: #292929;
-      font-size: 12px;
-      line-height: 1.45;
-      overflow: hidden;
-    }
-    .spot-index-control.expanded {
-      width: min(280px, calc(100vw - 84px));
-    }
-    .spot-index-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-      padding: 9px 10px;
-      cursor: pointer;
-      user-select: none;
-    }
-    .spot-index-title {
-      font-size: 11px;
-      font-weight: 750;
-      letter-spacing: .08em;
-      color: #666;
-      white-space: nowrap;
-    }
-    .spot-index-toggle {
-      font-size: 11px;
-      color: #777;
-      white-space: nowrap;
-    }
-    .spot-index-list {
-      padding: 0 7px 7px;
-      max-height: min(52vh, 360px);
-      overflow-y: auto;
-    }
-    .spot-index-row {
-      display: grid;
-      grid-template-columns: 22px 1fr;
-      gap: 6px;
-      align-items: center;
-      padding: 4px 3px;
-      border-radius: 5px;
-      text-decoration: none;
-      color: inherit;
-      cursor: pointer;
-    }
-    .spot-index-row:hover { background: rgba(0,0,0,.045); }
-    .spot-index-badge {
-      width: 20px;
-      height: 20px;
-      box-sizing: border-box;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: #fff;
-      border: 1.7px solid currentColor;
-      font-size: 10px;
-      font-weight: 800;
-    }
-    .spot-index-name {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
+
 
 
 </style>
 </head>
 <body>
   <div id="map"></div>
+  <div id="map-info" aria-label="Map information">
+    <section class="info-card">
+      <div class="info-title">SPOT INDEX</div>
+      <div id="spot-index-list"></div>
+    </section>
+    <section class="info-card">
+      <div class="info-title">LEGEND</div>
+      <div id="legend-list"></div>
+    </section>
+  </div>
   <div id="status" class="map-status">地図データを読み込み中…</div>
 
   <script
@@ -176,7 +208,7 @@
   <script>
     "use strict";
 
-    // travel-maps public engine v0.4.4
+    // travel-maps public engine v0.4.8
     // Public-only spreadsheet. map_id is a map identifier only, never visit order.
     // Never add itinerary dates/times, sequence, bookings, costs, personal notes,
     // Notion URLs/IDs, tokens, or secrets.
@@ -312,82 +344,35 @@
       return rule || { color: "#5f5f5f", label: String(category || "その他") };
     }
 
-    function addLegend(legendRules) {
-      const visibleRules = legendRules.filter(r => r.visible);
-      if (!visibleRules.length) return;
-      const legend = L.control({ position: "bottomleft" });
-      legend.onAdd = function() {
-        const div = L.DomUtil.create("div", "legend");
-        div.innerHTML = visibleRules.map(r =>
-          `<div class="legend-row"><span class="dot" style="background:${r.color}"></span>${escapeHtml(r.label)}</div>`
-        ).join("");
-        return div;
-      };
-      legend.addTo(map);
+    function renderLegendOutside(rules) {
+      const root = document.getElementById("legend-list");
+      root.innerHTML = "";
+      for (const rule of rules.filter(r => r.visible)) {
+        const row = document.createElement("div");
+        row.className = "external-legend-row";
+        row.innerHTML =
+          `<span class="external-legend-dot" style="background:${escapeHtml(rule.color)}"></span>` +
+          `<span>${escapeHtml(rule.label)}</span>`;
+        root.appendChild(row);
+      }
     }
 
-
-    function addSpotIndex(spots) {
-      if (!spots.length) return;
-
-      const collapseThreshold = 8;
-      const initiallyExpanded = spots.length < collapseThreshold;
-
-      const control = L.control({ position: "topright" });
-      control.onAdd = function() {
-        const div = L.DomUtil.create(
-          "div",
-          "spot-index-control" + (initiallyExpanded ? " expanded" : "")
-        );
-
-        const rows = spots.map(spot =>
-          `<a class="spot-index-row" href="${spot.mapsUrl}" target="_blank" rel="noopener noreferrer" title="Google Mapsで開く">` +
-            `<span class="spot-index-badge" style="color:${spot.color}">${escapeHtml(spot.mapId)}</span>` +
-            `<span class="spot-index-name">${escapeHtml(spot.name)}</span>` +
-          `</a>`
-        ).join("");
-
-        const headerLabel = initiallyExpanded ? "SPOT INDEX" : `SPOTS ${spots.length}`;
-        div.innerHTML =
-          `<div class="spot-index-head" role="button" tabindex="0" aria-expanded="${initiallyExpanded ? "true" : "false"}">` +
-            `<span class="spot-index-title">${headerLabel}</span>` +
-            `<span class="spot-index-toggle">${initiallyExpanded ? "" : "＋"}</span>` +
-          `</div>` +
-          `<div class="spot-index-list"${initiallyExpanded ? "" : ' style="display:none"'}>${rows}</div>`;
-
-        const head = div.querySelector(".spot-index-head");
-        const list = div.querySelector(".spot-index-list");
-        const title = div.querySelector(".spot-index-title");
-        const toggle = div.querySelector(".spot-index-toggle");
-        let expanded = initiallyExpanded;
-
-        function setExpanded(next) {
-          expanded = next;
-          list.style.display = expanded ? "" : "none";
-          div.classList.toggle("expanded", expanded);
-          head.setAttribute("aria-expanded", expanded ? "true" : "false");
-          title.textContent = expanded ? "SPOT INDEX" : `SPOTS ${spots.length}`;
-          toggle.textContent = expanded ? "−" : "＋";
-        }
-
-        if (spots.length >= collapseThreshold) {
-          head.addEventListener("click", () => setExpanded(!expanded));
-          head.addEventListener("keydown", (e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              setExpanded(!expanded);
-            }
-          });
-        } else {
-          head.style.cursor = "default";
-          toggle.textContent = "";
-        }
-
-        L.DomEvent.disableClickPropagation(div);
-        L.DomEvent.disableScrollPropagation(div);
-        return div;
-      };
-      control.addTo(map);
+    function renderSpotIndexOutside(spots) {
+      const root = document.getElementById("spot-index-list");
+      root.innerHTML = "";
+      root.classList.toggle("dense", spots.length >= 9);
+      for (const spot of spots) {
+        const a = document.createElement("a");
+        a.className = "external-spot-row";
+        a.href = spot.mapsUrl;
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.title = "Google Mapsで開く";
+        a.innerHTML =
+          `<span class="place-marker-alpha" style="color:${escapeHtml(spot.color)}">${escapeHtml(spot.mapId)}</span>` +
+          `<span class="external-spot-name">${escapeHtml(spot.name)}</span>`;
+        root.appendChild(a);
+      }
     }
 
     let spotPayload = null;
@@ -475,9 +460,9 @@
 
         if (!count) throw new Error("No valid public spots were found.");
         map.fitBounds(bounds, { padding: [58, 58], maxZoom: 15 });
-        addLegend(legendRules);
+        renderLegendOutside(legendRules);
         spotIndexEntries.sort((a, b) => a.mapId.localeCompare(b.mapId, "en"));
-        addSpotIndex(spotIndexEntries);
+        renderSpotIndexOutside(spotIndexEntries);
         setStatus("", true);
       } catch (err) {
         console.error(err);
