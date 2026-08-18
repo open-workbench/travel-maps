@@ -23,10 +23,13 @@
     .leaflet-zoom-animated { transform-origin: 0 0; }
     .leaflet-zoom-hide { visibility: hidden; }
     .leaflet-control-container { position: relative; z-index: 800; }
-    .leaflet-control { position: relative; z-index: 800; pointer-events: auto; float: left; clear: both; }
+    .leaflet-control { position: relative; z-index: 800; pointer-events: auto; clear: both; }
     .leaflet-top, .leaflet-bottom { position: absolute; z-index: 1000; pointer-events: none; }
     .leaflet-top { top: 0; } .leaflet-right { right: 0; } .leaflet-bottom { bottom: 0; } .leaflet-left { left: 0; }
-    .leaflet-control { margin: 10px; }
+    .leaflet-left .leaflet-control { float: left; margin-left: 10px; }
+    .leaflet-right .leaflet-control { float: right; margin-right: 10px; }
+    .leaflet-top .leaflet-control { margin-top: 10px; }
+    .leaflet-bottom .leaflet-control { margin-bottom: 10px; }
     .leaflet-bar a {
       display:block; width:26px; height:26px; line-height:26px; text-align:center;
       text-decoration:none; background:#fff; color:#000; border-bottom:1px solid #ccc;
@@ -89,7 +92,7 @@
   <script>
     "use strict";
 
-    // travel-maps public engine v0.3.0
+    // travel-maps public engine v0.3.1
     // Public-only spreadsheet. Never add itinerary dates/times, sequence,
     // bookings, costs, personal notes, Notion URLs/IDs, tokens, or secrets.
     const SPREADSHEET_ID = "1ATwMkh0aJoz4ppB5J0_djBVdjYI-nScH6m5GzZsATXI";
