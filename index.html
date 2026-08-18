@@ -98,19 +98,39 @@
       border: 1px solid rgba(0,0,0,.13);
       border-radius: 8px;
       box-shadow: 0 1px 6px rgba(0,0,0,.10);
-      padding: 9px 10px;
-      min-width: 190px;
-      max-width: min(280px, calc(100vw - 84px));
       color: #292929;
       font-size: 12px;
       line-height: 1.45;
+      overflow: hidden;
+    }
+    .spot-index-control.expanded {
+      width: min(280px, calc(100vw - 84px));
+    }
+    .spot-index-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 9px 10px;
+      cursor: pointer;
+      user-select: none;
     }
     .spot-index-title {
-      margin: 0 0 5px;
       font-size: 11px;
       font-weight: 750;
       letter-spacing: .08em;
       color: #666;
+      white-space: nowrap;
+    }
+    .spot-index-toggle {
+      font-size: 11px;
+      color: #777;
+      white-space: nowrap;
+    }
+    .spot-index-list {
+      padding: 0 7px 7px;
+      max-height: min(52vh, 360px);
+      overflow-y: auto;
     }
     .spot-index-row {
       display: grid;
@@ -156,7 +176,7 @@
   <script>
     "use strict";
 
-    // travel-maps public engine v0.4.3
+    // travel-maps public engine v0.4.4
     // Public-only spreadsheet. map_id is a map identifier only, never visit order.
     // Never add itinerary dates/times, sequence, bookings, costs, personal notes,
     // Notion URLs/IDs, tokens, or secrets.
@@ -309,19 +329,60 @@
 
     function addSpotIndex(spots) {
       if (!spots.length) return;
+
+      const collapseThreshold = 8;
+      const initiallyExpanded = spots.length < collapseThreshold;
+
       const control = L.control({ position: "topright" });
       control.onAdd = function() {
-        const div = L.DomUtil.create("div", "spot-index-control");
+        const div = L.DomUtil.create(
+          "div",
+          "spot-index-control" + (initiallyExpanded ? " expanded" : "")
+        );
+
+        const rows = spots.map(spot =>
+          `<a class="spot-index-row" href="${spot.mapsUrl}" target="_blank" rel="noopener noreferrer" title="Google Mapsで開く">` +
+            `<span class="spot-index-badge" style="color:${spot.color}">${escapeHtml(spot.mapId)}</span>` +
+            `<span class="spot-index-name">${escapeHtml(spot.name)}</span>` +
+          `</a>`
+        ).join("");
+
+        const headerLabel = initiallyExpanded ? "SPOT INDEX" : `SPOTS ${spots.length}`;
         div.innerHTML =
-          `<div class="spot-index-title">SPOT INDEX</div>` +
-          spots.map(spot => {
-            return (
-              `<a class="spot-index-row" href="${spot.mapsUrl}" target="_blank" rel="noopener noreferrer" title="Google Mapsで開く">` +
-                `<span class="spot-index-badge" style="color:${spot.color}">${escapeHtml(spot.mapId)}</span>` +
-                `<span class="spot-index-name">${escapeHtml(spot.name)}</span>` +
-              `</a>`
-            );
-          }).join("");
+          `<div class="spot-index-head" role="button" tabindex="0" aria-expanded="${initiallyExpanded ? "true" : "false"}">` +
+            `<span class="spot-index-title">${headerLabel}</span>` +
+            `<span class="spot-index-toggle">${initiallyExpanded ? "" : "＋"}</span>` +
+          `</div>` +
+          `<div class="spot-index-list"${initiallyExpanded ? "" : ' style="display:none"'}>${rows}</div>`;
+
+        const head = div.querySelector(".spot-index-head");
+        const list = div.querySelector(".spot-index-list");
+        const title = div.querySelector(".spot-index-title");
+        const toggle = div.querySelector(".spot-index-toggle");
+        let expanded = initiallyExpanded;
+
+        function setExpanded(next) {
+          expanded = next;
+          list.style.display = expanded ? "" : "none";
+          div.classList.toggle("expanded", expanded);
+          head.setAttribute("aria-expanded", expanded ? "true" : "false");
+          title.textContent = expanded ? "SPOT INDEX" : `SPOTS ${spots.length}`;
+          toggle.textContent = expanded ? "−" : "＋";
+        }
+
+        if (spots.length >= collapseThreshold) {
+          head.addEventListener("click", () => setExpanded(!expanded));
+          head.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              setExpanded(!expanded);
+            }
+          });
+        } else {
+          head.style.cursor = "default";
+          toggle.textContent = "";
+        }
+
         L.DomEvent.disableClickPropagation(div);
         L.DomEvent.disableScrollPropagation(div);
         return div;
