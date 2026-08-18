@@ -89,7 +89,7 @@
   <script>
     "use strict";
 
-    // travel-maps public engine v0.2.2
+    // travel-maps public engine v0.3.0
     // Public-only spreadsheet. Never add itinerary dates/times, sequence,
     // bookings, costs, personal notes, Notion URLs/IDs, tokens, or secrets.
     const SPREADSHEET_ID = "1ATwMkh0aJoz4ppB5J0_djBVdjYI-nScH6m5GzZsATXI";
@@ -118,14 +118,10 @@
       statusEl.className = "map-status" + (ok ? " ok" : "");
     }
 
-    function colorFor(category) {
-      const c = String(category || "");
-      if (/食事|カフェ|coffee|food/i.test(c)) return "#c49518";
-      if (/自然|海|公園|nature/i.test(c)) return "#477f55";
-      if (/交通|駅|港|空港|transport/i.test(c)) return "#4b6f8a";
-      if (/建築|宿|hotel|architecture/i.test(c)) return "#bd6031";
-      return "#5f5f5f";
-    }
+    const LEGEND_HEADERS = [
+      "key", "label", "color", "match_terms", "sort_order", "visible"
+    ];
+    const legendSheetParam = `${sheetParam}_legend`;
 
     function safeHttpsUrl(value, kind) {
       if (!value) return "";
@@ -154,11 +150,11 @@
       return c && c.v !== null && c.v !== undefined ? c.v : "";
     }
 
-    function validateHeaders(table) {
+    function validateHeaders(table, expected) {
       const cols = Array.isArray(table.cols) ? table.cols : [];
-      if (cols.length !== REQUIRED_HEADERS.length) return false;
+      if (cols.length !== expected.length) return false;
       const actual = cols.map(col => String(col.label || "").trim());
-      return REQUIRED_HEADERS.every((h, i) => actual[i] === h);
+      return expected.every((h, i) => actual[i] === h);
     }
 
     function escapeHtml(value) {
@@ -167,43 +163,107 @@
       }[ch]));
     }
 
-    function addLegend() {
+    function parseVisible(value) {
+      if (value === true || value === 1) return true;
+      if (value === false || value === 0 || value === "") return false;
+      const s = String(value).trim().toLowerCase();
+      if (["true", "yes", "1"].includes(s)) return true;
+      if (["false", "no", "0"].includes(s)) return false;
+      throw new Error("Legend visible must be TRUE or FALSE.");
+    }
+
+    function parseLegend(payload) {
+      if (!payload || payload.status === "error" || !payload.table) {
+        throw new Error("Public legend settings could not be read.");
+      }
+      if (!validateHeaders(payload.table, LEGEND_HEADERS)) {
+        throw new Error("Security gate blocked legend settings: schema mismatch.");
+      }
+
+      const rules = [];
+      const seen = new Set();
+      for (const row of (payload.table.rows || [])) {
+        const key = String(cellValue(row, 0)).trim();
+        const label = String(cellValue(row, 1)).trim();
+        const color = String(cellValue(row, 2)).trim();
+        const matchRaw = String(cellValue(row, 3)).trim();
+        const sortOrder = Number(cellValue(row, 4));
+        const visibleRaw = cellValue(row, 5);
+
+        if (!key && !label && !color && !matchRaw && !Number.isFinite(sortOrder) && visibleRaw === "") continue;
+        if (!/^[a-z0-9_-]{1,40}$/.test(key) || seen.has(key)) {
+          throw new Error("Security gate blocked an invalid or duplicate legend key.");
+        }
+        if (!label || label.length > 40 || containsSensitivePattern(label)) {
+          throw new Error("Security gate blocked an invalid legend label.");
+        }
+        if (!/^#[0-9a-f]{6}$/i.test(color)) {
+          throw new Error("Security gate blocked an invalid legend color.");
+        }
+        if (!matchRaw || matchRaw.length > 240 || containsSensitivePattern(matchRaw)) {
+          throw new Error("Security gate blocked invalid legend matching terms.");
+        }
+        if (!Number.isInteger(sortOrder) || sortOrder < 0 || sortOrder > 9999) {
+          throw new Error("Security gate blocked an invalid legend sort order.");
+        }
+        const matchTerms = matchRaw.split("|").map(x => x.trim().toLowerCase()).filter(Boolean);
+        if (!matchTerms.length || matchTerms.some(x => x.length > 40)) {
+          throw new Error("Security gate blocked invalid legend matching terms.");
+        }
+
+        rules.push({ key, label, color, matchTerms, sortOrder, visible: parseVisible(visibleRaw) });
+        seen.add(key);
+      }
+      if (!rules.length) throw new Error("No valid legend settings were found.");
+      return rules.sort((a, b) => a.sortOrder - b.sortOrder || a.key.localeCompare(b.key));
+    }
+
+    function styleForCategory(category, legendRules) {
+      const c = String(category || "").trim().toLowerCase();
+      const rule = legendRules.find(r => r.matchTerms.some(term => c.includes(term)));
+      return rule || { color: "#5f5f5f", label: String(category || "その他") };
+    }
+
+    function addLegend(legendRules) {
+      const visibleRules = legendRules.filter(r => r.visible);
+      if (!visibleRules.length) return;
       const legend = L.control({ position: "bottomright" });
       legend.onAdd = function() {
         const div = L.DomUtil.create("div", "legend");
-        div.innerHTML = `
-          <div class="legend-row"><span class="dot" style="background:#bd6031"></span>建築・宿</div>
-          <div class="legend-row"><span class="dot" style="background:#c49518"></span>食事・カフェ</div>
-          <div class="legend-row"><span class="dot" style="background:#477f55"></span>自然</div>
-          <div class="legend-row"><span class="dot" style="background:#4b6f8a"></span>交通</div>`;
+        div.innerHTML = visibleRules.map(r =>
+          `<div class="legend-row"><span class="dot" style="background:${r.color}"></span>${escapeHtml(r.label)}</div>`
+        ).join("");
         return div;
       };
       legend.addTo(map);
     }
 
-    let dataHandled = false;
+    let spotPayload = null;
+    let legendPayload = null;
+    let renderDone = false;
+
     const loadTimeout = window.setTimeout(() => {
-      if (dataHandled) return;
+      if (renderDone) return;
       map.setView([32.803, 130.707], 12);
-      setStatus("公開シートを匿名で読み込めません。公開専用Sheetの共有設定を確認してください。");
+      setStatus("公開データまたは凡例設定を匿名で読み込めません。公開専用Sheetを確認してください。");
     }, 10000);
 
-    window.__travelMapData = function(payload) {
-      dataHandled = true;
+    function renderIfReady() {
+      if (renderDone || !spotPayload || !legendPayload) return;
+      renderDone = true;
       window.clearTimeout(loadTimeout);
       try {
-        if (!payload || payload.status === "error" || !payload.table) {
+        if (!spotPayload.table || spotPayload.status === "error") {
           throw new Error("Public sheet data could not be read.");
         }
-        if (!validateHeaders(payload.table)) {
+        if (!validateHeaders(spotPayload.table, REQUIRED_HEADERS)) {
           throw new Error("Security gate blocked the sheet: schema does not exactly match the six approved public fields.");
         }
+        const legendRules = parseLegend(legendPayload);
 
         const bounds = [];
         let count = 0;
-        const dataRows = payload.table.rows || [];
-
-        for (const row of dataRows) {
+        for (const row of (spotPayload.table.rows || [])) {
           const name = String(cellValue(row, 0)).trim();
           const lat = Number(cellValue(row, 1));
           const lng = Number(cellValue(row, 2));
@@ -224,12 +284,12 @@
 
           const officialUrl = safeHttpsUrl(officialUrlRaw, "Official");
           const mapsUrl = safeHttpsUrl(mapsUrlRaw, "Google Maps");
-          const color = colorFor(category);
+          const style = styleForCategory(category, legendRules);
 
           const marker = L.marker([lat, lng], {
             icon: L.divIcon({
               className: "place-marker-wrap",
-              html: `<div class="place-marker-dot" style="background:${color}"></div>`,
+              html: `<div class="place-marker-dot" style="background:${style.color}"></div>`,
               iconSize: [16, 16],
               iconAnchor: [8, 8]
             })
@@ -253,33 +313,43 @@
 
         if (!count) throw new Error("No valid public spots were found.");
         map.fitBounds(bounds, { padding: [58, 58], maxZoom: 15 });
-        addLegend();
+        addLegend(legendRules);
         setStatus("", true);
       } catch (err) {
         console.error(err);
         map.setView([32.803, 130.707], 12);
         setStatus("地図データを表示できません。公開データの安全チェックで停止しました。");
       }
+    }
+
+    window.__travelMapSpotData = function(payload) {
+      spotPayload = payload;
+      renderIfReady();
+    };
+    window.__travelMapLegendData = function(payload) {
+      legendPayload = payload;
+      renderIfReady();
     };
 
-    // Explicitly declare one header row so Google Visualization returns the
-    // six approved spreadsheet headers as column labels instead of inferring
-    // the header count differently across published-sheet responses.
-    const script = document.createElement("script");
-    const endpoint = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq`;
-    const tqx = "out:json;responseHandler:__travelMapData";
-    script.src = endpoint +
-      `?sheet=${encodeURIComponent(sheetParam)}` +
-      `&headers=1` +
-      `&tqx=${encodeURIComponent(tqx)}` +
-      `&tq=${encodeURIComponent("select *")}`;
-    script.onerror = () => {
-      dataHandled = true;
-      window.clearTimeout(loadTimeout);
-      map.setView([32.803, 130.707], 12);
-      setStatus("公開シートを匿名で読み込めません。公開専用Sheetの共有設定を確認してください。");
-    };
-    document.head.appendChild(script);
+    function appendGvizScript(sheetName, callbackName) {
+      const script = document.createElement("script");
+      const endpoint = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq`;
+      const tqx = `out:json;responseHandler:${callbackName}`;
+      script.src = endpoint +
+        `?sheet=${encodeURIComponent(sheetName)}` +
+        `&headers=1` +
+        `&tqx=${encodeURIComponent(tqx)}` +
+        `&tq=${encodeURIComponent("select *")}`;
+      script.onerror = () => {
+        if (renderDone) return;
+        map.setView([32.803, 130.707], 12);
+        setStatus("公開データまたは凡例設定を匿名で読み込めません。公開専用Sheetを確認してください。");
+      };
+      document.head.appendChild(script);
+    }
+
+    appendGvizScript(sheetParam, "__travelMapSpotData");
+    appendGvizScript(legendSheetParam, "__travelMapLegendData");
   </script>
 </body>
 </html>
