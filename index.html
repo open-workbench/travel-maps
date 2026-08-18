@@ -83,7 +83,11 @@
     .popup-links { display:flex; gap:10px; margin-top:8px; flex-wrap:wrap; }
     .popup-links a { color:#1557b0; text-decoration:none; }
     .popup-links a:hover { text-decoration:underline; }
-  </style>
+  
+    .place-label.collision-adjusted {
+      will-change: transform;
+    }
+</style>
 </head>
 <body>
   <div id="map"></div>
@@ -95,7 +99,7 @@
   <script>
     "use strict";
 
-    // travel-maps public engine v0.3.2
+    // travel-maps public engine v0.3.3
     // Public-only spreadsheet. Never add itinerary dates/times, sequence,
     // bookings, costs, personal notes, Notion URLs/IDs, tokens, or secrets.
     const SPREADSHEET_ID = "1ATwMkh0aJoz4ppB5J0_djBVdjYI-nScH6m5GzZsATXI";
@@ -318,8 +322,58 @@
         }
 
         if (!count) throw new Error("No valid public spots were found.");
-        map.fitBounds(bounds, { padding: [58, 58], maxZoom: 15 });
-        addLegend(legendRules);
+        
+    function resolveLabelCollisions() {
+      const labels = Array.from(document.querySelectorAll(".place-label"));
+      if (labels.length < 2) return;
+
+      labels.forEach(el => {
+        el.classList.add("collision-adjusted");
+        el.style.transform = "";
+      });
+
+      const gap = 6;
+      const maxShift = 84;
+      const placed = [];
+
+      labels.sort((a, b) => {
+        const ra = a.getBoundingClientRect();
+        const rb = b.getBoundingClientRect();
+        return (ra.top - rb.top) || (ra.left - rb.left);
+      });
+
+      for (const el of labels) {
+        let rect = el.getBoundingClientRect();
+
+        for (let attempts = 0; attempts < 12; attempts++) {
+          const collision = placed.some(prev => !(
+            rect.right + gap < prev.left ||
+            rect.left - gap > prev.right ||
+            rect.bottom + gap < prev.top ||
+            rect.top - gap > prev.bottom
+          ));
+
+          if (!collision) break;
+
+          const step = 14 * (Math.floor(attempts / 2) + 1);
+          const shiftY = attempts % 2 === 0 ? -step : step;
+          el.style.transform = `translateY(${Math.max(-maxShift, Math.min(maxShift, shiftY))}px)`;
+          rect = el.getBoundingClientRect();
+        }
+
+        placed.push(rect);
+      }
+    }
+
+map.fitBounds(bounds, { padding: [58, 58], maxZoom: 15 });
+        
+        requestAnimationFrame(() => {
+          requestAnimationFrame(resolveLabelCollisions);
+        });
+        map.on("zoomend moveend resize", () => {
+          requestAnimationFrame(resolveLabelCollisions);
+        });
+addLegend(legendRules);
         setStatus("", true);
       } catch (err) {
         console.error(err);
