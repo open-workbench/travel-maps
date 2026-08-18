@@ -84,9 +84,66 @@
     .popup-links a { color:#1557b0; text-decoration:none; }
     .popup-links a:hover { text-decoration:underline; }
   
-    .place-label.collision-adjusted {
-      will-change: transform;
+    .place-marker-alpha {
+      width: 24px; height: 24px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      background: #fff; border: 2px solid currentColor;
+      box-shadow: 0 1px 6px rgba(0,0,0,.20);
+      font: 750 12px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+      letter-spacing: .01em;
     }
+
+    .spot-index-control {
+      background: rgba(255,255,255,.96);
+      border: 1px solid rgba(0,0,0,.13);
+      border-radius: 8px;
+      box-shadow: 0 1px 6px rgba(0,0,0,.10);
+      padding: 9px 10px;
+      min-width: 190px;
+      max-width: min(280px, calc(100vw - 84px));
+      color: #292929;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .spot-index-title {
+      margin: 0 0 5px;
+      font-size: 11px;
+      font-weight: 750;
+      letter-spacing: .08em;
+      color: #666;
+    }
+    .spot-index-row {
+      display: grid;
+      grid-template-columns: 22px 1fr;
+      gap: 6px;
+      align-items: center;
+      padding: 4px 3px;
+      border-radius: 5px;
+      text-decoration: none;
+      color: inherit;
+      cursor: pointer;
+    }
+    .spot-index-row:hover { background: rgba(0,0,0,.045); }
+    .spot-index-badge {
+      width: 20px;
+      height: 20px;
+      box-sizing: border-box;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #fff;
+      border: 1.7px solid currentColor;
+      font-size: 10px;
+      font-weight: 800;
+    }
+    .spot-index-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+
 </style>
 </head>
 <body>
@@ -99,12 +156,13 @@
   <script>
     "use strict";
 
-    // travel-maps public engine v0.3.3
-    // Public-only spreadsheet. Never add itinerary dates/times, sequence,
-    // bookings, costs, personal notes, Notion URLs/IDs, tokens, or secrets.
+    // travel-maps public engine v0.4.2
+    // Public-only spreadsheet. map_id is a map identifier only, never visit order.
+    // Never add itinerary dates/times, sequence, bookings, costs, personal notes,
+    // Notion URLs/IDs, tokens, or secrets.
     const SPREADSHEET_ID = "1ATwMkh0aJoz4ppB5J0_djBVdjYI-nScH6m5GzZsATXI";
     const REQUIRED_HEADERS = [
-      "name", "latitude", "longitude", "category", "official_url", "google_maps_url"
+      "name", "latitude", "longitude", "category", "official_url", "google_maps_url", "map_id"
     ];
     const FORBIDDEN_DOMAINS = [
       "notion.so", "app.notion.com", "drive.google.com", "docs.google.com"
@@ -248,6 +306,29 @@
       legend.addTo(map);
     }
 
+
+    function addSpotIndex(spots) {
+      if (!spots.length) return;
+      const control = L.control({ position: "topright" });
+      control.onAdd = function() {
+        const div = L.DomUtil.create("div", "spot-index-control");
+        div.innerHTML =
+          `<div class="spot-index-title">SPOT INDEX</div>` +
+          spots.map(spot => {
+            return (
+              `<a class="spot-index-row" href="${spot.mapsUrl}" target="_blank" rel="noopener noreferrer" title="Google Mapsで開く">` +
+                `<span class="spot-index-badge" style="color:${spot.color}">${escapeHtml(spot.mapId)}</span>` +
+                `<span class="spot-index-name">${escapeHtml(spot.name)}</span>` +
+              `</a>`
+            );
+          }).join("");
+        L.DomEvent.disableClickPropagation(div);
+        L.DomEvent.disableScrollPropagation(div);
+        return div;
+      };
+      control.addTo(map);
+    }
+
     let spotPayload = null;
     let legendPayload = null;
     let renderDone = false;
@@ -267,11 +348,13 @@
           throw new Error("Public sheet data could not be read.");
         }
         if (!validateHeaders(spotPayload.table, REQUIRED_HEADERS)) {
-          throw new Error("Security gate blocked the sheet: schema does not exactly match the six approved public fields.");
+          throw new Error("Security gate blocked the sheet: schema does not exactly match the seven approved public fields.");
         }
         const legendRules = parseLegend(legendPayload);
 
         const bounds = [];
+        const seenMapIds = new Set();
+        const spotIndexEntries = [];
         let count = 0;
         for (const row of (spotPayload.table.rows || [])) {
           const name = String(cellValue(row, 0)).trim();
@@ -280,15 +363,20 @@
           const category = String(cellValue(row, 3)).trim();
           const officialUrlRaw = String(cellValue(row, 4)).trim();
           const mapsUrlRaw = String(cellValue(row, 5)).trim();
+          const mapId = String(cellValue(row, 6)).trim().toUpperCase();
 
-          if (!name && !category && !officialUrlRaw && !mapsUrlRaw && !Number.isFinite(lat) && !Number.isFinite(lng)) continue;
-          if (!name || !Number.isFinite(lat) || !Number.isFinite(lng) || !category) {
+          if (!name && !category && !officialUrlRaw && !mapsUrlRaw && !mapId && !Number.isFinite(lat) && !Number.isFinite(lng)) continue;
+          if (!name || !Number.isFinite(lat) || !Number.isFinite(lng) || !category || !mapId) {
             throw new Error("Security gate blocked an incomplete or invalid spot row.");
           }
+          if (!/^[A-Z]{1,2}$/.test(mapId) || seenMapIds.has(mapId)) {
+            throw new Error("Security gate blocked an invalid or duplicate map_id.");
+          }
+          seenMapIds.add(mapId);
           if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
             throw new Error("Security gate blocked invalid coordinates.");
           }
-          if ([name, category, officialUrlRaw, mapsUrlRaw].some(containsSensitivePattern)) {
+          if ([name, category, officialUrlRaw, mapsUrlRaw, mapId].some(containsSensitivePattern)) {
             throw new Error("Security gate blocked a row that may contain itinerary or personal information.");
           }
 
@@ -299,81 +387,36 @@
           const marker = L.marker([lat, lng], {
             icon: L.divIcon({
               className: "place-marker-wrap",
-              html: `<div class="place-marker-dot" style="background:${style.color}"></div>`,
-              iconSize: [16, 16],
-              iconAnchor: [8, 8]
+              html: `<div class="place-marker-alpha" style="color:${style.color}">${escapeHtml(mapId)}</div>`,
+              iconSize: [24, 24],
+              iconAnchor: [12, 12]
             })
           }).addTo(map);
 
-          marker.bindTooltip(escapeHtml(name), {
-            permanent: true, direction: "right", offset: [10, 0], className: "place-label"
+
+          marker.bindTooltip(`${escapeHtml(mapId)}｜${escapeHtml(name)}`, {
+            direction: "top",
+            offset: [0, -14],
+            opacity: 0.96
           });
 
-          const links = [];
-          if (officialUrl) links.push(`<a href="${officialUrl}" target="_blank" rel="noopener noreferrer">公式</a>`);
-          if (mapsUrl) links.push(`<a href="${mapsUrl}" target="_blank" rel="noopener noreferrer">Google Maps</a>`);
-          marker.bindPopup(
-            `<strong>${escapeHtml(name)}</strong><br>${escapeHtml(category)}` +
-            (links.length ? `<div class="popup-links">${links.join("")}</div>` : "")
-          );
+          marker.on("click", () => {
+            window.open(mapsUrl, "_blank", "noopener,noreferrer");
+          });
+
+          spotIndexEntries.push({
+            mapId, name, mapsUrl, officialUrl, color: style.color
+          });
 
           bounds.push([lat, lng]);
           count++;
         }
 
         if (!count) throw new Error("No valid public spots were found.");
-        
-    function resolveLabelCollisions() {
-      const labels = Array.from(document.querySelectorAll(".place-label"));
-      if (labels.length < 2) return;
-
-      labels.forEach(el => {
-        el.classList.add("collision-adjusted");
-        el.style.transform = "";
-      });
-
-      const gap = 6;
-      const maxShift = 84;
-      const placed = [];
-
-      labels.sort((a, b) => {
-        const ra = a.getBoundingClientRect();
-        const rb = b.getBoundingClientRect();
-        return (ra.top - rb.top) || (ra.left - rb.left);
-      });
-
-      for (const el of labels) {
-        let rect = el.getBoundingClientRect();
-
-        for (let attempts = 0; attempts < 12; attempts++) {
-          const collision = placed.some(prev => !(
-            rect.right + gap < prev.left ||
-            rect.left - gap > prev.right ||
-            rect.bottom + gap < prev.top ||
-            rect.top - gap > prev.bottom
-          ));
-
-          if (!collision) break;
-
-          const step = 14 * (Math.floor(attempts / 2) + 1);
-          const shiftY = attempts % 2 === 0 ? -step : step;
-          el.style.transform = `translateY(${Math.max(-maxShift, Math.min(maxShift, shiftY))}px)`;
-          rect = el.getBoundingClientRect();
-        }
-
-        placed.push(rect);
-      }
-    }
-
-map.fitBounds(bounds, { padding: [58, 58], maxZoom: 15 });
-        
-        requestAnimationFrame(() => {
-          requestAnimationFrame(resolveLabelCollisions);
-        });
-        map.on("zoomend moveend resize", () => {
-          requestAnimationFrame(resolveLabelCollisions);
-        });
-addLegend(legendRules);
+        map.fitBounds(bounds, { padding: [58, 58], maxZoom: 15 });
+        addLegend(legendRules);
+        spotIndexEntries.sort((a, b) => a.mapId.localeCompare(b.mapId, "en"));
+        addSpotIndex(spotIndexEntries);
         setStatus("", true);
       } catch (err) {
         console.error(err);
