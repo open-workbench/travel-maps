@@ -1,0 +1,458 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Place Map</title>
+  <link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"
+  />
+  <style>
+
+    /* Leaflet critical layout fallback: keeps GitHub Pages working even if external Leaflet CSS is blocked. */
+    .leaflet-pane, .leaflet-tile, .leaflet-marker-icon, .leaflet-marker-shadow,
+    .leaflet-tile-container, .leaflet-pane > svg, .leaflet-pane > canvas,
+    .leaflet-zoom-box, .leaflet-image-layer, .leaflet-layer {
+      position: absolute; left: 0; top: 0;
+    }
+    .leaflet-container { overflow: hidden; background: #ddd; outline-offset: 1px; }
+    .leaflet-tile, .leaflet-marker-icon, .leaflet-marker-shadow { user-select: none; -webkit-user-drag: none; }
+    .leaflet-tile { visibility: hidden; }
+    .leaflet-tile-loaded { visibility: inherit; }
+    .leaflet-zoom-animated { transform-origin: 0 0; }
+    .leaflet-zoom-hide { visibility: hidden; }
+    .leaflet-control-container { z-index: 800; }
+    .leaflet-control { position: relative; z-index: 800; pointer-events: auto; clear: both; }
+    .leaflet-top, .leaflet-bottom { position: absolute; z-index: 1000; pointer-events: none; }
+    .leaflet-top { top: 0; }
+    .leaflet-bottom { bottom: 0; }
+    .leaflet-left { left: 0; }
+    .leaflet-right { right: 0; }
+    .leaflet-left .leaflet-control { float: left; margin-left: 10px; }
+    .leaflet-right .leaflet-control { float: right; margin-right: 10px; }
+    .leaflet-top .leaflet-control { margin-top: 10px; }
+    .leaflet-bottom .leaflet-control { margin-bottom: 10px; }
+    .leaflet-bar a {
+      display:block; width:26px; height:26px; line-height:26px; text-align:center;
+      text-decoration:none; background:#fff; color:#000; border-bottom:1px solid #ccc;
+      font: bold 18px/26px Arial, Helvetica, sans-serif;
+    }
+    .leaflet-bar a:first-child { border-top-left-radius:4px; border-top-right-radius:4px; }
+    .leaflet-bar a:last-child { border-bottom-left-radius:4px; border-bottom-right-radius:4px; border-bottom:none; }
+    .leaflet-popup-pane, .leaflet-tooltip-pane { z-index: 700; }
+    .leaflet-marker-pane { z-index: 600; }
+    .leaflet-tooltip-pane { z-index: 650; }
+    .leaflet-popup { position:absolute; text-align:center; margin-bottom:20px; }
+    .leaflet-tooltip { position:absolute; padding:6px; background:#fff; border:1px solid #fff; border-radius:3px; color:#222; white-space:nowrap; user-select:none; pointer-events:none; }
+    .leaflet-control-attribution { background:rgba(255,255,255,.8); margin:0; padding:0 5px; font-size:11px; }
+    html, body { height: 100%; margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+    #map { height: 100%; min-height: 360px; background: #f4f4f2; }
+    .map-status {
+      position: absolute; z-index: 1000; top: 12px; left: 50%; transform: translateX(-50%);
+      max-width: min(600px, calc(100vw - 32px)); padding: 9px 13px;
+      background: rgba(255,255,255,.96); border: 1px solid rgba(0,0,0,.12);
+      border-radius: 9px; box-shadow: 0 2px 12px rgba(0,0,0,.08);
+      color: #292929; font-size: 13px; line-height: 1.45;
+    }
+    .map-status.ok { display: none; }
+    .place-label {
+      background: rgba(255,255,255,.97);
+      border: 1px solid rgba(0,0,0,.16);
+      border-radius: 5px;
+      box-shadow: 0 1px 5px rgba(0,0,0,.14);
+      color: #202020;
+      font-size: 13px;
+      font-weight: 700;
+      padding: 4px 7px;
+      white-space: nowrap;
+    }
+    .place-label::before { display: none; }
+    .legend {
+      background: rgba(255,255,255,.96); padding: 9px 11px; border-radius: 7px;
+      border: 1px solid rgba(0,0,0,.13); box-shadow: 0 1px 5px rgba(0,0,0,.08);
+      color: #292929; font-size: 12px; line-height: 1.7;
+    }
+    .legend-row { display:flex; align-items:center; gap:7px; }
+    .dot { width:10px; height:10px; border-radius:50%; display:inline-block; box-shadow: 0 0 0 1px rgba(0,0,0,.08); }
+    .place-marker-wrap { background: transparent; border: 0; }
+    .place-marker-dot {
+      width: 16px; height: 16px; box-sizing: border-box; border-radius: 50%;
+      border: 2.5px solid #fff; box-shadow: 0 1px 5px rgba(0,0,0,.32);
+    }
+    .popup-links { display:flex; gap:10px; margin-top:8px; flex-wrap:wrap; }
+    .popup-links a { color:#1557b0; text-decoration:none; }
+    .popup-links a:hover { text-decoration:underline; }
+  
+    .place-marker-alpha {
+      width: 24px; height: 24px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      background: #fff; border: 2px solid currentColor;
+      box-shadow: 0 1px 6px rgba(0,0,0,.20);
+      font: 750 12px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+      letter-spacing: .01em;
+    }
+
+    .spot-index-control {
+      background: rgba(255,255,255,.96);
+      border: 1px solid rgba(0,0,0,.13);
+      border-radius: 8px;
+      box-shadow: 0 1px 6px rgba(0,0,0,.10);
+      padding: 9px 10px;
+      min-width: 190px;
+      max-width: min(280px, calc(100vw - 84px));
+      color: #292929;
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    .spot-index-title {
+      margin: 0 0 5px;
+      font-size: 11px;
+      font-weight: 750;
+      letter-spacing: .08em;
+      color: #666;
+    }
+    .spot-index-row {
+      display: grid;
+      grid-template-columns: 22px 1fr;
+      gap: 6px;
+      align-items: center;
+      padding: 4px 3px;
+      border-radius: 5px;
+      text-decoration: none;
+      color: inherit;
+      cursor: pointer;
+    }
+    .spot-index-row:hover { background: rgba(0,0,0,.045); }
+    .spot-index-badge {
+      width: 20px;
+      height: 20px;
+      box-sizing: border-box;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #fff;
+      border: 1.7px solid currentColor;
+      font-size: 10px;
+      font-weight: 800;
+    }
+    .spot-index-name {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+
+</style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="status" class="map-status">地図データを読み込み中…</div>
+
+  <script
+    src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"
+  ></script>
+  <script>
+    "use strict";
+
+    // travel-maps public engine v0.4.2
+    // Public-only spreadsheet. map_id is a map identifier only, never visit order.
+    // Never add itinerary dates/times, sequence, bookings, costs, personal notes,
+    // Notion URLs/IDs, tokens, or secrets.
+    const SPREADSHEET_ID = "1ATwMkh0aJoz4ppB5J0_djBVdjYI-nScH6m5GzZsATXI";
+    const REQUIRED_HEADERS = [
+      "name", "latitude", "longitude", "category", "official_url", "google_maps_url", "map_id"
+    ];
+    const FORBIDDEN_DOMAINS = [
+      "notion.so", "app.notion.com", "drive.google.com", "docs.google.com"
+    ];
+
+    const sheetParam = new URLSearchParams(location.search).get("sheet") || "kumamoto";
+    if (!/^[a-z0-9-]{1,40}$/.test(sheetParam)) {
+      throw new Error("Invalid map identifier.");
+    }
+
+    const map = L.map("map", { zoomControl: true, preferCanvas: false });
+    L.tileLayer("https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
+      maxZoom: 20,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+    }).addTo(map);
+
+    const statusEl = document.getElementById("status");
+
+    function setStatus(message, ok=false) {
+      statusEl.textContent = message;
+      statusEl.className = "map-status" + (ok ? " ok" : "");
+    }
+
+    const LEGEND_HEADERS = [
+      "key", "label", "color", "match_terms", "sort_order", "visible"
+    ];
+    const legendSheetParam = `${sheetParam}_legend`;
+
+    function safeHttpsUrl(value, kind) {
+      if (!value) return "";
+      let u;
+      try { u = new URL(value); } catch { throw new Error(`Invalid ${kind} URL.`); }
+      if (u.protocol !== "https:") throw new Error(`${kind} URL must use HTTPS.`);
+      const host = u.hostname.toLowerCase();
+      if (FORBIDDEN_DOMAINS.some(d => host === d || host.endsWith("." + d))) {
+        throw new Error(`${kind} URL contains a private-source domain.`);
+      }
+      if (kind === "Google Maps" && !/(^|\.)google\.[a-z.]+$/.test(host)) {
+        throw new Error("Google Maps URL must use a Google domain.");
+      }
+      return u.href;
+    }
+
+    function containsSensitivePattern(text) {
+      const s = String(text || "");
+      const email = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i;
+      const forbiddenWords = /(予約|booking|費用|cost|price|day\s*\d|日時|時刻|人数|phone|email|token|secret|notion)/i;
+      return email.test(s) || forbiddenWords.test(s);
+    }
+
+    function cellValue(row, index) {
+      const c = row && row.c ? row.c[index] : null;
+      return c && c.v !== null && c.v !== undefined ? c.v : "";
+    }
+
+    function validateHeaders(table, expected) {
+      const cols = Array.isArray(table.cols) ? table.cols : [];
+      if (cols.length !== expected.length) return false;
+      const actual = cols.map(col => String(col.label || "").trim());
+      return expected.every((h, i) => actual[i] === h);
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, ch => ({
+        "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;"
+      }[ch]));
+    }
+
+    function parseVisible(value) {
+      if (value === true || value === 1) return true;
+      if (value === false || value === 0 || value === "") return false;
+      const s = String(value).trim().toLowerCase();
+      if (["true", "yes", "1"].includes(s)) return true;
+      if (["false", "no", "0"].includes(s)) return false;
+      throw new Error("Legend visible must be TRUE or FALSE.");
+    }
+
+    function parseLegend(payload) {
+      if (!payload || payload.status === "error" || !payload.table) {
+        throw new Error("Public legend settings could not be read.");
+      }
+      if (!validateHeaders(payload.table, LEGEND_HEADERS)) {
+        throw new Error("Security gate blocked legend settings: schema mismatch.");
+      }
+
+      const rules = [];
+      const seen = new Set();
+      for (const row of (payload.table.rows || [])) {
+        const key = String(cellValue(row, 0)).trim();
+        const label = String(cellValue(row, 1)).trim();
+        const color = String(cellValue(row, 2)).trim();
+        const matchRaw = String(cellValue(row, 3)).trim();
+        const sortOrder = Number(cellValue(row, 4));
+        const visibleRaw = cellValue(row, 5);
+
+        if (!key && !label && !color && !matchRaw && !Number.isFinite(sortOrder) && visibleRaw === "") continue;
+        if (!/^[a-z0-9_-]{1,40}$/.test(key) || seen.has(key)) {
+          throw new Error("Security gate blocked an invalid or duplicate legend key.");
+        }
+        if (!label || label.length > 40 || containsSensitivePattern(label)) {
+          throw new Error("Security gate blocked an invalid legend label.");
+        }
+        if (!/^#[0-9a-f]{6}$/i.test(color)) {
+          throw new Error("Security gate blocked an invalid legend color.");
+        }
+        if (!matchRaw || matchRaw.length > 240 || containsSensitivePattern(matchRaw)) {
+          throw new Error("Security gate blocked invalid legend matching terms.");
+        }
+        if (!Number.isInteger(sortOrder) || sortOrder < 0 || sortOrder > 9999) {
+          throw new Error("Security gate blocked an invalid legend sort order.");
+        }
+        const matchTerms = matchRaw.split("|").map(x => x.trim().toLowerCase()).filter(Boolean);
+        if (!matchTerms.length || matchTerms.some(x => x.length > 40)) {
+          throw new Error("Security gate blocked invalid legend matching terms.");
+        }
+
+        rules.push({ key, label, color, matchTerms, sortOrder, visible: parseVisible(visibleRaw) });
+        seen.add(key);
+      }
+      if (!rules.length) throw new Error("No valid legend settings were found.");
+      return rules.sort((a, b) => a.sortOrder - b.sortOrder || a.key.localeCompare(b.key));
+    }
+
+    function styleForCategory(category, legendRules) {
+      const c = String(category || "").trim().toLowerCase();
+      const rule = legendRules.find(r => r.matchTerms.some(term => c.includes(term)));
+      return rule || { color: "#5f5f5f", label: String(category || "その他") };
+    }
+
+    function addLegend(legendRules) {
+      const visibleRules = legendRules.filter(r => r.visible);
+      if (!visibleRules.length) return;
+      const legend = L.control({ position: "bottomright" });
+      legend.onAdd = function() {
+        const div = L.DomUtil.create("div", "legend");
+        div.innerHTML = visibleRules.map(r =>
+          `<div class="legend-row"><span class="dot" style="background:${r.color}"></span>${escapeHtml(r.label)}</div>`
+        ).join("");
+        return div;
+      };
+      legend.addTo(map);
+    }
+
+
+    function addSpotIndex(spots) {
+      if (!spots.length) return;
+      const control = L.control({ position: "topright" });
+      control.onAdd = function() {
+        const div = L.DomUtil.create("div", "spot-index-control");
+        div.innerHTML =
+          `<div class="spot-index-title">SPOT INDEX</div>` +
+          spots.map(spot => {
+            return (
+              `<a class="spot-index-row" href="${spot.mapsUrl}" target="_blank" rel="noopener noreferrer" title="Google Mapsで開く">` +
+                `<span class="spot-index-badge" style="color:${spot.color}">${escapeHtml(spot.mapId)}</span>` +
+                `<span class="spot-index-name">${escapeHtml(spot.name)}</span>` +
+              `</a>`
+            );
+          }).join("");
+        L.DomEvent.disableClickPropagation(div);
+        L.DomEvent.disableScrollPropagation(div);
+        return div;
+      };
+      control.addTo(map);
+    }
+
+    let spotPayload = null;
+    let legendPayload = null;
+    let renderDone = false;
+
+    const loadTimeout = window.setTimeout(() => {
+      if (renderDone) return;
+      map.setView([32.803, 130.707], 12);
+      setStatus("公開データまたは凡例設定を匿名で読み込めません。公開専用Sheetを確認してください。");
+    }, 10000);
+
+    function renderIfReady() {
+      if (renderDone || !spotPayload || !legendPayload) return;
+      renderDone = true;
+      window.clearTimeout(loadTimeout);
+      try {
+        if (!spotPayload.table || spotPayload.status === "error") {
+          throw new Error("Public sheet data could not be read.");
+        }
+        if (!validateHeaders(spotPayload.table, REQUIRED_HEADERS)) {
+          throw new Error("Security gate blocked the sheet: schema does not exactly match the seven approved public fields.");
+        }
+        const legendRules = parseLegend(legendPayload);
+
+        const bounds = [];
+        const seenMapIds = new Set();
+        const spotIndexEntries = [];
+        let count = 0;
+        for (const row of (spotPayload.table.rows || [])) {
+          const name = String(cellValue(row, 0)).trim();
+          const lat = Number(cellValue(row, 1));
+          const lng = Number(cellValue(row, 2));
+          const category = String(cellValue(row, 3)).trim();
+          const officialUrlRaw = String(cellValue(row, 4)).trim();
+          const mapsUrlRaw = String(cellValue(row, 5)).trim();
+          const mapId = String(cellValue(row, 6)).trim().toUpperCase();
+
+          if (!name && !category && !officialUrlRaw && !mapsUrlRaw && !mapId && !Number.isFinite(lat) && !Number.isFinite(lng)) continue;
+          if (!name || !Number.isFinite(lat) || !Number.isFinite(lng) || !category || !mapId) {
+            throw new Error("Security gate blocked an incomplete or invalid spot row.");
+          }
+          if (!/^[A-Z]{1,2}$/.test(mapId) || seenMapIds.has(mapId)) {
+            throw new Error("Security gate blocked an invalid or duplicate map_id.");
+          }
+          seenMapIds.add(mapId);
+          if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+            throw new Error("Security gate blocked invalid coordinates.");
+          }
+          if ([name, category, officialUrlRaw, mapsUrlRaw, mapId].some(containsSensitivePattern)) {
+            throw new Error("Security gate blocked a row that may contain itinerary or personal information.");
+          }
+
+          const officialUrl = safeHttpsUrl(officialUrlRaw, "Official");
+          const mapsUrl = safeHttpsUrl(mapsUrlRaw, "Google Maps");
+          const style = styleForCategory(category, legendRules);
+
+          const marker = L.marker([lat, lng], {
+            icon: L.divIcon({
+              className: "place-marker-wrap",
+              html: `<div class="place-marker-alpha" style="color:${style.color}">${escapeHtml(mapId)}</div>`,
+              iconSize: [24, 24],
+              iconAnchor: [12, 12]
+            })
+          }).addTo(map);
+
+
+          marker.bindTooltip(`${escapeHtml(mapId)}｜${escapeHtml(name)}`, {
+            direction: "top",
+            offset: [0, -14],
+            opacity: 0.96
+          });
+
+          marker.on("click", () => {
+            window.open(mapsUrl, "_blank", "noopener,noreferrer");
+          });
+
+          spotIndexEntries.push({
+            mapId, name, mapsUrl, officialUrl, color: style.color
+          });
+
+          bounds.push([lat, lng]);
+          count++;
+        }
+
+        if (!count) throw new Error("No valid public spots were found.");
+        map.fitBounds(bounds, { padding: [58, 58], maxZoom: 15 });
+        addLegend(legendRules);
+        spotIndexEntries.sort((a, b) => a.mapId.localeCompare(b.mapId, "en"));
+        addSpotIndex(spotIndexEntries);
+        setStatus("", true);
+      } catch (err) {
+        console.error(err);
+        map.setView([32.803, 130.707], 12);
+        setStatus("地図データを表示できません。公開データの安全チェックで停止しました。");
+      }
+    }
+
+    window.__travelMapSpotData = function(payload) {
+      spotPayload = payload;
+      renderIfReady();
+    };
+    window.__travelMapLegendData = function(payload) {
+      legendPayload = payload;
+      renderIfReady();
+    };
+
+    function appendGvizScript(sheetName, callbackName) {
+      const script = document.createElement("script");
+      const endpoint = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq`;
+      const tqx = `out:json;responseHandler:${callbackName}`;
+      script.src = endpoint +
+        `?sheet=${encodeURIComponent(sheetName)}` +
+        `&headers=1` +
+        `&tqx=${encodeURIComponent(tqx)}` +
+        `&tq=${encodeURIComponent("select *")}`;
+      script.onerror = () => {
+        if (renderDone) return;
+        map.setView([32.803, 130.707], 12);
+        setStatus("公開データまたは凡例設定を匿名で読み込めません。公開専用Sheetを確認してください。");
+      };
+      document.head.appendChild(script);
+    }
+
+    appendGvizScript(sheetParam, "__travelMapSpotData");
+    appendGvizScript(legendSheetParam, "__travelMapLegendData");
+  </script>
+</body>
+</html>
