@@ -75,6 +75,31 @@
     }
     .legend-row { display:flex; align-items:center; gap:7px; }
     .dot { width:10px; height:10px; border-radius:50%; display:inline-block; box-shadow: 0 0 0 1px rgba(0,0,0,.08); }
+    .legend-mini {
+      display: grid;
+      grid-template-columns: auto auto;
+      column-gap: 8px;
+      row-gap: 2px;
+      padding: 5px 6px;
+      background: rgba(255,255,255,.90);
+      border: 1px solid rgba(0,0,0,.10);
+      border-radius: 5px;
+      color: #333;
+      font-size: 9px;
+      line-height: 1.25;
+      white-space: nowrap;
+    }
+    .legend-mini-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .legend-mini-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex: 0 0 7px;
+    }
     .place-marker-wrap { background: transparent; border: 0; }
     .place-marker-dot {
       width: 16px; height: 16px; box-sizing: border-box; border-radius: 50%;
@@ -108,7 +133,7 @@
   <script>
     "use strict";
 
-    // travel-maps public engine v0.4.9
+    // travel-maps public engine v0.5.0
     // Public-only spreadsheet. map_id is a map identifier only, never visit order.
     // Never add itinerary dates/times, sequence, bookings, costs, personal notes,
     // Notion URLs/IDs, tokens, or secrets.
@@ -244,6 +269,26 @@
       return rule || { color: "#5f5f5f", label: String(category || "その他") };
     }
 
+    function addLegendMinimal(rules) {
+      const visible = rules.filter(r => r.visible);
+      if (!visible.length) return;
+
+      const control = L.control({ position: "bottomleft" });
+      control.onAdd = function() {
+        const div = L.DomUtil.create("div", "legend-mini");
+        div.innerHTML = visible.map(rule =>
+          `<div class="legend-mini-row">` +
+            `<span class="legend-mini-dot" style="background:${escapeHtml(rule.color)}"></span>` +
+            `<span>${escapeHtml(rule.label)}</span>` +
+          `</div>`
+        ).join("");
+        L.DomEvent.disableClickPropagation(div);
+        L.DomEvent.disableScrollPropagation(div);
+        return div;
+      };
+      control.addTo(map);
+    }
+
     let spotPayload = null;
     let legendPayload = null;
     let renderDone = false;
@@ -323,6 +368,7 @@
         }
 
         if (!count) throw new Error("No valid public spots were found.");
+        addLegendMinimal(legendRules);
         map.fitBounds(bounds, { padding: [58, 58], maxZoom: 15 });
         setStatus("", true);
       } catch (err) {
