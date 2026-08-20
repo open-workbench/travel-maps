@@ -341,26 +341,39 @@
 
     function spiderfyGroup(group) {
       collapseSpiderGroup();
-      const centerPoint = group
-        .map(rec => map.latLngToContainerPoint(rec.originalLatLng))
+      const points = group.map((rec) => ({
+        rec,
+        point: map.latLngToContainerPoint(rec.originalLatLng)
+      }));
+
+      const centerPoint = points
+        .map(item => item.point)
         .reduce((sum, point) => L.point(sum.x + point.x, sum.y + point.y), L.point(0, 0));
       centerPoint.x /= group.length;
       centerPoint.y /= group.length;
 
+      const ordered = points
+        .map((item) => ({
+          ...item,
+          angle: Math.atan2(item.point.y - centerPoint.y, item.point.x - centerPoint.x)
+        }))
+        .sort((a, b) => a.angle - b.angle);
+
       const radius = SPIDERFY_RADIUS_BASE + Math.max(0, group.length - 2) * 5;
-      group.forEach((rec, index) => {
+      ordered.forEach((item, index) => {
         const angle = (-Math.PI / 2) + (Math.PI * 2 * index / group.length);
         const displayPoint = L.point(
           centerPoint.x + Math.cos(angle) * radius,
           centerPoint.y + Math.sin(angle) * radius
         );
         const displayLatLng = map.containerPointToLatLng(displayPoint);
-        rec.marker.setLatLng(displayLatLng);
-        rec.spiderfied = true;
-        const leg = L.polyline([rec.originalLatLng, displayLatLng], {
-          color: rec.markerColor || "#777",
-          weight: 1,
-          opacity: 0.55,
+        item.rec.marker.setLatLng(displayLatLng);
+        item.rec.spiderfied = true;
+        const leg = L.polyline([item.rec.originalLatLng, displayLatLng], {
+          color: item.rec.markerColor || "#777",
+          weight: 2,
+          opacity: 0.95,
+          lineCap: "round",
           interactive: false
         }).addTo(map);
         spiderLegs.push(leg);
