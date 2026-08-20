@@ -117,11 +117,7 @@
       font: 750 12px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
       letter-spacing: .01em;
     }
-
-
-
-
-</style>
+  </style>
 </head>
 <body>
   <div id="map"></div>
@@ -133,7 +129,7 @@
   <script>
     "use strict";
 
-    // travel-maps public engine v0.5.0
+    // travel-maps public engine v0.6.0
     // Public-only spreadsheet. map_id is a map identifier only, never visit order.
     // Never add itinerary dates/times, sequence, bookings, costs, personal notes,
     // Notion URLs/IDs, tokens, or secrets.
@@ -144,6 +140,8 @@
     const FORBIDDEN_DOMAINS = [
       "notion.so", "app.notion.com", "drive.google.com", "docs.google.com"
     ];
+    const SPIDERFY_PIXEL_THRESHOLD = 30;
+    const SPIDERFY_RADIUS_BASE = 34;
 
     const sheetParam = new URLSearchParams(location.search).get("sheet") || "kumamoto";
     if (!/^[a-z0-9-]{1,40}$/.test(sheetParam)) {
@@ -293,6 +291,86 @@
     let spotPayload = null;
     let legendPayload = null;
     let renderDone = false;
+    const markerRecords = [];
+    let spiderGroups = [];
+    let activeSpiderGroup = null;
+    let spiderLegs = [];
+
+    function collapseSpiderGroup() {
+      if (!activeSpiderGroup) return;
+      for (const rec of activeSpiderGroup) {
+        rec.marker.setLatLng(rec.originalLatLng);
+        rec.spiderfied = false;
+      }
+      for (const leg of spiderLegs) map.removeLayer(leg);
+      spiderLegs = [];
+      activeSpiderGroup = null;
+    }
+
+    function rebuildSpiderGroups() {
+      collapseSpiderGroup();
+      spiderGroups = [];
+      for (const rec of markerRecords) rec.spiderGroup = null;
+      const remaining = new Set(markerRecords);
+
+      while (remaining.size) {
+        const first = remaining.values().next().value;
+        remaining.delete(first);
+        const group = [first];
+        const queue = [first];
+
+        while (queue.length) {
+          const current = queue.shift();
+          const currentPoint = map.latLngToContainerPoint(current.originalLatLng);
+          for (const candidate of Array.from(remaining)) {
+            const candidatePoint = map.latLngToContainerPoint(candidate.originalLatLng);
+            if (currentPoint.distanceTo(candidatePoint) <= SPIDERFY_PIXEL_THRESHOLD) {
+              remaining.delete(candidate);
+              group.push(candidate);
+              queue.push(candidate);
+            }
+          }
+        }
+
+        if (group.length > 1) {
+          spiderGroups.push(group);
+          for (const rec of group) rec.spiderGroup = group;
+        }
+      }
+    }
+
+    function spiderfyGroup(group) {
+      collapseSpiderGroup();
+      const centerPoint = group
+        .map(rec => map.latLngToContainerPoint(rec.originalLatLng))
+        .reduce((sum, point) => L.point(sum.x + point.x, sum.y + point.y), L.point(0, 0));
+      centerPoint.x /= group.length;
+      centerPoint.y /= group.length;
+
+      const radius = SPIDERFY_RADIUS_BASE + Math.max(0, group.length - 2) * 5;
+      group.forEach((rec, index) => {
+        const angle = (-Math.PI / 2) + (Math.PI * 2 * index / group.length);
+        const displayPoint = L.point(
+          centerPoint.x + Math.cos(angle) * radius,
+          centerPoint.y + Math.sin(angle) * radius
+        );
+        const displayLatLng = map.containerPointToLatLng(displayPoint);
+        rec.marker.setLatLng(displayLatLng);
+        rec.spiderfied = true;
+        const leg = L.polyline([rec.originalLatLng, displayLatLng], {
+          color: "#777",
+          weight: 1,
+          opacity: 0.55,
+          interactive: false
+        }).addTo(map);
+        spiderLegs.push(leg);
+      });
+      activeSpiderGroup = group;
+    }
+
+    function openMaps(rec) {
+      window.open(rec.mapsUrl, "_blank", "noopener,noreferrer");
+    }
 
     const loadTimeout = window.setTimeout(() => {
       if (renderDone) return;
@@ -353,15 +431,33 @@
             })
           }).addTo(map);
 
-
           marker.bindTooltip(`${escapeHtml(mapId)}｜${escapeHtml(name)}`, {
             direction: "top",
             offset: [0, -14],
             opacity: 0.96
           });
 
-          marker.on("click", () => {
-            window.open(mapsUrl, "_blank", "noopener,noreferrer");
+          const rec = {
+            marker,
+            originalLatLng: L.latLng(lat, lng),
+            mapsUrl,
+            mapId,
+            spiderGroup: null,
+            spiderfied: false
+          };
+          markerRecords.push(rec);
+
+          marker.on("click", (event) => {
+            if (event.originalEvent) L.DomEvent.stopPropagation(event.originalEvent);
+            if (rec.spiderGroup && rec.spiderGroup.length > 1) {
+              if (activeSpiderGroup === rec.spiderGroup && rec.spiderfied) {
+                openMaps(rec);
+              } else {
+                spiderfyGroup(rec.spiderGroup);
+              }
+              return;
+            }
+            openMaps(rec);
           });
 
           bounds.push([lat, lng]);
@@ -371,6 +467,7 @@
         if (!count) throw new Error("No valid public spots were found.");
         addLegendMinimal(legendRules);
         map.fitBounds(bounds, { padding: [58, 58], maxZoom: 15 });
+        map.whenReady(() => rebuildSpiderGroups());
         setStatus("", true);
       } catch (err) {
         console.error(err);
@@ -378,6 +475,13 @@
         setStatus("地図データを表示できません。公開データの安全チェックで停止しました。");
       }
     }
+
+    map.on("click", () => collapseSpiderGroup());
+    map.on("zoomstart", () => collapseSpiderGroup());
+    map.on("zoomend", () => rebuildSpiderGroups());
+    map.on("moveend", () => {
+      if (!activeSpiderGroup) rebuildSpiderGroups();
+    });
 
     window.__travelMapSpotData = function(payload) {
       spotPayload = payload;
