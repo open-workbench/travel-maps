@@ -358,7 +358,7 @@
         rec.marker.setLatLng(displayLatLng);
         rec.spiderfied = true;
         const leg = L.polyline([rec.originalLatLng, displayLatLng], {
-          color: "#777",
+          color: rec.markerColor || "#777",
           weight: 1,
           opacity: 0.55,
           interactive: false
@@ -442,6 +442,7 @@
             originalLatLng: L.latLng(lat, lng),
             mapsUrl,
             mapId,
+            markerColor: style.color,
             spiderGroup: null,
             spiderfied: false
           };
