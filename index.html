@@ -118,55 +118,6 @@
       letter-spacing: .01em;
     }
 
-    .spot-index-control {
-      background: rgba(255,255,255,.96);
-      border: 1px solid rgba(0,0,0,.13);
-      border-radius: 8px;
-      box-shadow: 0 1px 6px rgba(0,0,0,.10);
-      padding: 9px 10px;
-      min-width: 190px;
-      max-width: min(280px, calc(100vw - 84px));
-      color: #292929;
-      font-size: 12px;
-      line-height: 1.45;
-    }
-    .spot-index-title {
-      margin: 0 0 5px;
-      font-size: 11px;
-      font-weight: 750;
-      letter-spacing: .08em;
-      color: #666;
-    }
-    .spot-index-row {
-      display: grid;
-      grid-template-columns: 22px 1fr;
-      gap: 6px;
-      align-items: center;
-      padding: 4px 3px;
-      border-radius: 5px;
-      text-decoration: none;
-      color: inherit;
-      cursor: pointer;
-    }
-    .spot-index-row:hover { background: rgba(0,0,0,.045); }
-    .spot-index-badge {
-      width: 20px;
-      height: 20px;
-      box-sizing: border-box;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: #fff;
-      border: 1.7px solid currentColor;
-      font-size: 10px;
-      font-weight: 800;
-    }
-    .spot-index-name {
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
   </style>
 </head>
 <body>
@@ -357,26 +308,6 @@
         ...spot,
         label: alphaLabel(index)
       }));
-    }
-
-    function addSpotIndex(spots) {
-      if (!spots.length) return;
-      const control = L.control({ position: "topright" });
-      control.onAdd = function() {
-        const div = L.DomUtil.create("div", "spot-index-control");
-        div.innerHTML =
-          `<div class="spot-index-title">SPOT INDEX</div>` +
-          spots.map(spot => (
-            `<a class="spot-index-row" href="${spot.mapsUrl}" target="_blank" rel="noopener noreferrer" title="Google Mapsで開く">` +
-              `<span class="spot-index-badge" style="color:${escapeHtml(spot.color)}">${escapeHtml(spot.label)}</span>` +
-              `<span class="spot-index-name">${escapeHtml(spot.name)}</span>` +
-            `</a>`
-          )).join("");
-        L.DomEvent.disableClickPropagation(div);
-        L.DomEvent.disableScrollPropagation(div);
-        return div;
-      };
-      control.addTo(map);
     }
 
     let spotPayload = null;
@@ -595,7 +526,6 @@
         if (!orderedSpots.length) throw new Error("No valid public spots were found.");
         addLegendMinimal(legendRules);
         map.fitBounds(bounds, { padding: [58, 58], maxZoom: 15 });
-        addSpotIndex(orderedSpots);
         map.whenReady(() => rebuildSpiderGroups());
         setStatus("", true);
       } catch (err) {
